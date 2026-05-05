@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+# Triggers on every push to main, or manually from the Actions tab
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Required permissions for the official Pages deployment API
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; don't cancel in-progress runs
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Links the job to the github-pages environment so the URL appears in the summary
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # 1. Check out the repository
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Configure the Pages environment (sets base URL, etc.)
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      # 3. Package the static files as a Pages artifact.
+      #    node_modules is excluded automatically via .gitignore.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload everything at the repo root (index.html, css/, js/)
+          path: '.'
+
+      # 4. Deploy the artifact to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
