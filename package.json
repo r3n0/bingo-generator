@@ -1,12 +1,15 @@
 {
   "name": "bingo-generator",
   "version": "1.0.0",
-  "description": "",
+  "description": "Generador de tarjetas de bingo personalizadas con imágenes, números y palabras. Exporta a PDF.",
   "license": "ISC",
   "author": "",
-  "type": "commonjs",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "npx serve . --listen 3000 --no-clipboard",
+    "start": "npx serve . --listen 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
   }
 }
