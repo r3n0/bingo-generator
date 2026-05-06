@@ -26,10 +26,9 @@ export function shuffle(arr) {
  *
  * @param {Array<{id,dataUrl}>} images
  * @param {number}              numberRange  - e.g. 30 → [1..30]
- * @param {string}              wordsRaw     - comma-separated words
  * @returns {Array}
  */
-export function buildPool(images, numberRange, wordsRaw) {
+export function buildPool(images, numberRange) {
   const pool = [];
 
   // Images
@@ -45,17 +44,6 @@ export function buildPool(images, numberRange, wordsRaw) {
     }
   }
 
-  // Words
-  if (wordsRaw && wordsRaw.trim()) {
-    const words = wordsRaw
-      .split(',')
-      .map(w => w.trim())
-      .filter(w => w.length > 0);
-    for (const w of words) {
-      pool.push({ type: 'word', value: w });
-    }
-  }
-
   return pool;
 }
 
@@ -65,10 +53,7 @@ export function buildPool(images, numberRange, wordsRaw) {
  * @returns {string}
  */
 function hashCard(grid) {
-  return grid.map(cell => {
-    if (!cell) return 'FREE';
-    return `${cell.type}:${cell.value}`;
-  }).join('|');
+  return grid.map(cell => `${cell.type}:${cell.value}`).join('|');
 }
 
 /**
@@ -80,14 +65,21 @@ function hashCard(grid) {
  * @param {boolean} useFreeSpace
  * @returns {{ cards: Array<Array>, error: string|null }}
  */
-export function generateCards(pool, count, useFreeSpace) {
-  const cellsPerCard = 25;
-  const requiredCells = useFreeSpace ? cellsPerCard - 1 : cellsPerCard;
+export function generateCards(pool, count) {
+  const imagesPool  = pool.filter(item => item.type === 'image');
+  const numbersPool = pool.filter(item => item.type === 'number');
 
-  if (pool.length < requiredCells) {
+  if (imagesPool.length === 0) {
     return {
       cards: [],
-      error: `El pool tiene solo ${pool.length} elementos. Se necesitan al menos ${requiredCells} para llenar una tarjeta (${useFreeSpace ? '24 + espacio libre' : '25'}).`
+      error: 'Debe subir al menos 1 imagen a la galería para generar las tarjetas.'
+    };
+  }
+
+  if (numbersPool.length < 23) {
+    return {
+      cards: [],
+      error: `El rango de números es muy pequeño. Se necesitan al menos 23 números (actual: ${numbersPool.length}).`
     };
   }
 
@@ -98,19 +90,20 @@ export function generateCards(pool, count, useFreeSpace) {
 
   while (cards.length < count && tries < maxTries) {
     tries++;
-    const shuffled = shuffle(pool).slice(0, requiredCells);
-    let grid;
-
-    if (useFreeSpace) {
-      // Insert free space at position 12 (center of 5×5)
-      grid = [
-        ...shuffled.slice(0, 12),
-        null,
-        ...shuffled.slice(12),
-      ];
+    
+    // Pick exactly 2 images (unique if possible, otherwise repeat the single one)
+    let twoImages;
+    if (imagesPool.length >= 2) {
+      twoImages = shuffle(imagesPool).slice(0, 2);
     } else {
-      grid = shuffled.slice(0, 25);
+      twoImages = [imagesPool[0], imagesPool[0]];
     }
+    
+    // Pick 23 random numbers
+    const twentyThreeNumbers = shuffle(numbersPool).slice(0, 23);
+    
+    // Combine and shuffle to form the 25-cell grid
+    const grid = shuffle([...twoImages, ...twentyThreeNumbers]);
 
     const hash = hashCard(grid);
     if (!seen.has(hash)) {
@@ -122,7 +115,7 @@ export function generateCards(pool, count, useFreeSpace) {
   if (cards.length < count) {
     return {
       cards,
-      error: `Solo se pudieron generar ${cards.length} tarjetas únicas con los datos actuales (pool de ${pool.length} elementos).`
+      error: `Solo se pudieron generar ${cards.length} tarjetas únicas con los datos actuales.`
     };
   }
 

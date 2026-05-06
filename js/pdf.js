@@ -13,16 +13,16 @@ const PAGE_H = 297;   // A4 height mm
 
 const MARGIN_X = 10; // left/right page margin
 const MARGIN_Y = 10; // top/bottom page margin
-const COL_GAP = 6;  // horizontal gap between the two columns
-const ROW_GAP = 8;  // vertical   gap between the two rows
+const COL_GAP = 10;  // horizontal gap between the two columns
+const ROW_GAP = 10;  // vertical   gap between the two rows
 
 // 2 columns, 2 rows
 const CARD_W = (PAGE_W - MARGIN_X * 2 - COL_GAP) / 2;   // ≈ 92 mm
 const CARD_H = (PAGE_H - MARGIN_Y * 2 - ROW_GAP) / 2;   // ≈ 134.5 mm
 
 // ── Card internal geometry ────────────────────────────────────────────────
-const TITLE_H  = 10;  // coloured title bar height
-const HEADER_H = 12;  // BINGO letter row — increased for bigger letters
+const TITLE_H = 26;  // tall title bar to fit a prominent logo (≈3× previous size)
+const HEADER_H = 18;  // BINGO letter row — tall enough for 15pt letters
 
 // Remaining height for the 5×5 grid
 const CONTENT_H = CARD_H - TITLE_H - HEADER_H;  // ≈ 116.5 mm
@@ -40,19 +40,16 @@ const GRID_OFFSET_Y = TITLE_H + HEADER_H + (CONTENT_H - GRID_H) / 2; // vertical
 
 // ── Print-friendly colour palette ─────────────────────────────────────────
 const C_WHITE = [255, 255, 255];
-const C_PAGE_BG = [245, 245, 248];   // very light grey page
+const C_PAGE_BG = [245, 245, 245];   // very light grey page
 const C_CARD_BG = [255, 255, 255];   // card white background
-const C_CELL_ALT = [244, 245, 252];   // subtle checkerboard tint
-const C_FREE_BG = [228, 222, 255];   // soft lavender free space
-const C_BORDER = [190, 194, 218];   // grid lines
-const C_OUTER_BORDER = [55, 75, 175];    // card outer frame (dark blue)
-const C_TITLE_BG = [55, 75, 175];    // deep blue title bar
-const C_HEADER_BG = [228, 232, 255];   // light blue/lavender BINGO row
-const C_HEADER_TXT = [45, 55, 170];    // BINGO letters colour
+const C_CELL_ALT = [244, 244, 244];   // subtle checkerboard tint
+const C_BORDER = [0, 0, 0];   // grid lines
+const C_OUTER_BORDER = [0, 0, 0];    // card outer frame (dark blue)
+const C_TITLE_BG = [0, 0, 0];    // deep blue title bar
+const C_HEADER_BG = [100, 100, 100];   // light blue/lavender BINGO row
+const C_HEADER_TXT = [255, 255, 255];    // BINGO letters colour
 const C_NUM = [15, 15, 15];    // near-black numbers
-const C_WORD = [25, 25, 25];    // dark text for words
-const C_FREE_TXT = [85, 55, 200];    // purple FREE label
-const C_FOOTER = [155, 155, 165];   // footer text
+const C_FOOTER = [155, 155, 155];   // footer text
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -77,9 +74,9 @@ function vCentre(top, height, fontSize) {
 async function fetchFontBase64(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Font fetch failed: ${res.status}`);
-  const buf   = await res.arrayBuffer();
+  const buf = await res.arrayBuffer();
   const bytes = new Uint8Array(buf);
-  let binary  = '';
+  let binary = '';
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary);
 }
@@ -95,8 +92,8 @@ async function fetchFontBase64(url) {
 async function registerAntonFont(doc) {
   try {
     // Anton Regular TTF — Google Fonts repo served via jsDelivr (CORS + TTF = works with jsPDF)
-    const url   = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/anton/Anton-Regular.ttf';
-    const b64   = await fetchFontBase64(url);
+    const url = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/anton/Anton-Regular.ttf';
+    const b64 = await fetchFontBase64(url);
     const fname = 'Anton-Regular.ttf';
     doc.addFileToVFS(fname, b64);
     doc.addFont(fname, 'Anton', 'normal');
@@ -119,33 +116,58 @@ async function registerAntonFont(doc) {
  * @param {number} oy         top  edge of card (mm)
  * @param {Map}    imageCache preloaded HTMLImageElement map
  */
-async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactFont) {
+async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactFont, logoImg) {
+
+  const cornerRadius = 4;
 
   // ── White card background ──────────────────────────────────────────────
   doc.setFillColor(...C_CARD_BG);
-  doc.rect(ox, oy, CARD_W, CARD_H, 'F');
+  doc.roundedRect(ox, oy, CARD_W, CARD_H, cornerRadius, cornerRadius, 'F');
 
   // ── Title bar ──────────────────────────────────────────────────────────
   doc.setFillColor(...C_TITLE_BG);
-  doc.rect(ox, oy, CARD_W, TITLE_H, 'F');
+  // Rounded rect for the top corners
+  doc.roundedRect(ox, oy, CARD_W, TITLE_H, cornerRadius, cornerRadius, 'F');
+  // Regular rect to square off the bottom corners of the title bar
+  doc.rect(ox, oy + cornerRadius, CARD_W, TITLE_H - cornerRadius, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(...C_WHITE);
-  doc.text(title, ox + CARD_W / 2, vCentre(oy, TITLE_H, 8.5), { align: 'center' });
+  if (logoImg) {
+    // Draw logo left-aligned in the title bar, preserving aspect ratio
+    const logoH = TITLE_H - 2;           // 1 mm padding top & bottom
+    const ratio = logoImg.naturalWidth / logoImg.naturalHeight;
+    const logoW = Math.min(logoH * ratio, CARD_W / 2 - 4);  // never more than half the bar width
+    try {
+      doc.addImage(logoImg, 'JPEG', ox + 2, oy + 1, logoW, logoH);
+    } catch {
+      // Fallback to text if image rendering fails
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...C_WHITE);
+      doc.text(title, ox + 4, vCentre(oy, TITLE_H, 8.5));
+    }
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...C_WHITE);
+    doc.text(title, ox + CARD_W / 2, vCentre(oy, TITLE_H, 8.5), { align: 'center' });
+  }
 
   // Card number badge
   const badge = `N° ${cardIndex}`;
-  doc.setFontSize(6.5);
-  doc.setFont('helvetica', 'normal');
-  const bW = doc.getTextWidth(badge) + 4;
-  const bH = 4.5;
-  const bX = ox + CARD_W - bW - 2;
+  const badgeFontSize = 18;
+  doc.setFont(impactFont, impactFont === 'helvetica' ? 'bold' : 'normal');
+  doc.setFontSize(badgeFontSize);
+
+  const bW = doc.getTextWidth(badge) + 10;
+  const bH = 14;
+  const bX = ox + CARD_W - bW - 4;
   const bY = oy + (TITLE_H - bH) / 2;
-  doc.setFillColor(255, 255, 255, 35);
-  doc.roundedRect(bX, bY, bW, bH, 1.2, 1.2, 'F');
+
+  // doc.setFillColor(255, 255, 255, 100);
+  doc.roundedRect(bX, bY, bW, bH, 2, 2, 'F');
+
   doc.setTextColor(...C_WHITE);
-  doc.text(badge, bX + bW / 2, bY + bH / 2 + 6.5 * 0.35, { align: 'center' });
+  doc.text(badge, bX + bW / 2, bY + bH / 2 + badgeFontSize * 0.35, { align: 'center' });
 
   // ── BINGO column headers ───────────────────────────────────────────────
   const BINGO = ['B', 'I', 'N', 'G', 'O'];
@@ -160,14 +182,14 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
     const cx = gridX + c * CELL_SIZE;
     if (c > 0) {
       doc.setDrawColor(...C_BORDER);
-      doc.setLineWidth(0.25);
+      doc.setLineWidth(0.5);
       doc.line(cx, headerY, cx, headerY + HEADER_H);
     }
     // Use Anton (Impact-like) for BINGO letters at a generous size
     doc.setFont(impactFont, impactFont === 'helvetica' ? 'bold' : 'normal');
-    doc.setFontSize(11);
+    doc.setFontSize(20);
     doc.setTextColor(...C_HEADER_TXT);
-    doc.text(BINGO[c], cx + CELL_SIZE / 2, vCentre(headerY, HEADER_H, 11), { align: 'center' });
+    doc.text(BINGO[c], cx + CELL_SIZE / 2, vCentre(headerY, HEADER_H, 15), { align: 'center' });
   }
 
   // ── 5×5 cell grid ─────────────────────────────────────────────────────
@@ -181,9 +203,7 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
     const cell = grid[i];
 
     // Cell background
-    if (cell === null) {
-      doc.setFillColor(...C_FREE_BG);
-    } else if ((row + col) % 2 === 1) {
+    if ((row + col) % 2 === 1) {
       doc.setFillColor(...C_CELL_ALT);
     } else {
       doc.setFillColor(...C_CARD_BG);
@@ -192,22 +212,11 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
 
     // Cell border
     doc.setDrawColor(...C_BORDER);
-    doc.setLineWidth(0.25);
+    doc.setLineWidth(0.5);
     doc.rect(cx, cy, CELL_SIZE, CELL_SIZE, 'S');
 
     // Cell content
-    if (cell === null) {
-      // Free space
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.setTextColor(...C_FREE_TXT);
-      doc.text('★', cx + CELL_SIZE / 2, cy + CELL_SIZE / 2 + 13 * 0.35, { align: 'center' });
-      doc.setFontSize(4.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...C_FREE_TXT);
-      doc.text('LIBRE', cx + CELL_SIZE / 2, cy + CELL_SIZE - 2, { align: 'center' });
-
-    } else if (cell.type === 'number') {
+    if (cell.type === 'number') {
       // Anton gives the classic bingo look — large, condensed, bold
       doc.setFont(impactFont, impactFont === 'helvetica' ? 'bold' : 'normal');
       doc.setTextColor(...C_NUM);
@@ -215,20 +224,6 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
       const fs = cell.value.length <= 2 ? 19 : 14;
       doc.setFontSize(fs);
       doc.text(cell.value, cx + CELL_SIZE / 2, cy + CELL_SIZE / 2 + fs * 0.35, { align: 'center' });
-
-    } else if (cell.type === 'word') {
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...C_WORD);
-      const fs = cell.value.length > 10 ? 4.5 : cell.value.length > 6 ? 5.5 : 7;
-      doc.setFontSize(fs);
-      const lines = doc.splitTextToSize(cell.value, CELL_SIZE - 2);
-      const lineH = fs * 0.45;
-      const totalH = lines.length * lineH;
-      const startY = cy + (CELL_SIZE - totalH) / 2 + fs * 0.35;
-      doc.text(lines.slice(0, 3), cx + CELL_SIZE / 2, startY, {
-        align: 'center',
-        lineHeightFactor: 1.25,
-      });
 
     } else if (cell.type === 'image') {
       const img = imageCache.get(cell.value);
@@ -259,7 +254,7 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
   // ── Outer card border ─────────────────────────────────────────────────
   doc.setDrawColor(...C_OUTER_BORDER);
   doc.setLineWidth(0.6);
-  doc.rect(ox, oy, CARD_W, CARD_H, 'S');
+  doc.roundedRect(ox, oy, CARD_W, CARD_H, cornerRadius, cornerRadius, 'S');
 }
 
 // ── Public export ─────────────────────────────────────────────────────────
@@ -270,12 +265,22 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
  * @param {string}   title      card title text
  * @param {Function} onProgress callback(0–100)
  */
-export async function exportToPDF(cards, title, onProgress) {
+export async function exportToPDF(cards, title, onProgress, logoSrc) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   // Load Anton (Impact-like) font — falls back to helvetica-bold if unavailable
   const impactFont = await registerAntonFont(doc);
+
+  // Load logo image (used in every card's title bar)
+  let logoImg = null;
+  if (logoSrc) {
+    try {
+      logoImg = await loadImage(logoSrc);
+    } catch {
+      console.warn('[BingoGenerator] Could not load logo for PDF');
+    }
+  }
 
   // Pre-load all unique images
   const imageUrls = new Set();
@@ -316,7 +321,7 @@ export async function exportToPDF(cards, title, onProgress) {
     }
 
     const { ox, oy } = positions[posIndex];
-    await drawCard(doc, cards[i], title, i + 1, ox, oy, imageCache, impactFont);
+    await drawCard(doc, cards[i], title, i + 1, ox, oy, imageCache, impactFont, logoImg);
 
     onProgress?.(Math.round(((i + 1) / totalCards) * 100));
   }
@@ -329,7 +334,7 @@ export async function exportToPDF(cards, title, onProgress) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...C_FOOTER);
     doc.text(`Página ${p} / ${pageCount}`, PAGE_W - MARGIN_X, PAGE_H - 3.5, { align: 'right' });
-    doc.text('Bingo Generator Pro', MARGIN_X, PAGE_H - 3.5);
+    doc.text('Bingo por Adela - Pro Edition', MARGIN_X, PAGE_H - 3.5);
   }
 
   doc.save(`bingo-tarjetas-${totalCards}.pdf`);
