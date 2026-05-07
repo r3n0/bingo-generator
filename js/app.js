@@ -42,6 +42,9 @@ const toastEl         = document.getElementById('toast');
 const inputTitle      = document.getElementById('card-title');
 const inputRange      = document.getElementById('number-range');
 const inputCardCount  = document.getElementById('card-count');
+const inputCardStart  = document.getElementById('card-start');
+const inputEventDate  = document.getElementById('event-date');
+const inputEventRound = document.getElementById('event-round');
 
 const statImages  = document.getElementById('stat-images');
 const statNumbers = document.getElementById('stat-numbers');
@@ -403,7 +406,7 @@ function renderCell(cell) {
 }
 
 /** Render a full bingo card element */
-function renderCardEl(grid, cardIndex) {
+function renderCardEl(grid, cardIndex, eventDate, eventRound) {
   const title = inputTitle.value.trim() || '¡BINGO!';
 
   const card = document.createElement('div');
@@ -427,11 +430,29 @@ function renderCardEl(grid, cardIndex) {
     header.appendChild(titleSpan);
   }
 
+  // Right side: date, round, card number
+  const headerRight = document.createElement('div');
+  headerRight.className = 'card-header-right';
+
+  if (eventDate) {
+    const el = document.createElement('span');
+    el.className = 'card-header-date';
+    el.textContent = eventDate;
+    headerRight.appendChild(el);
+  }
+  if (eventRound) {
+    const el = document.createElement('span');
+    el.className = 'card-header-round';
+    el.textContent = eventRound;
+    headerRight.appendChild(el);
+  }
+
   const badge = document.createElement('span');
   badge.className   = 'card-number-badge';
   badge.textContent = `#${cardIndex}`;
-  header.appendChild(badge);
+  headerRight.appendChild(badge);
 
+  header.appendChild(headerRight);
   card.appendChild(header);
 
   // BINGO column labels
@@ -468,8 +489,12 @@ function escapeHtml(str) {
 function showPreview(cards) {
   previewGrid.innerHTML = '';
 
+  const eventDate  = inputEventDate.value || '';
+  const eventRound = inputEventRound.value || '';
+  const startNum   = parseInt(inputCardStart.value, 10) || 1;
+
   cards.forEach((grid, i) => {
-    const el = renderCardEl(grid, i + 1);
+    const el = renderCardEl(grid, startNum + i, eventDate, eventRound);
     previewGrid.appendChild(el);
   });
 
@@ -494,6 +519,9 @@ async function handleExport() {
   }
 
   const title = inputTitle.value.trim() || '¡BINGO!';
+  const eventDate  = inputEventDate.value || '';
+  const eventRound = inputEventRound.value || '';
+  const startNum   = parseInt(inputCardStart.value, 10) || 1;
 
   loadingModal.style.display = 'flex';
   progressBar.style.width = '0%';
@@ -503,7 +531,7 @@ async function handleExport() {
     await exportToPDF(cards, title, (progress) => {
       progressBar.style.width = `${progress}%`;
       loadingDesc.textContent = `Renderizando tarjeta ${Math.ceil(progress / 100 * cards.length)} de ${cards.length}...`;
-    }, state.logoSrc);
+    }, state.logoSrc, eventDate, eventRound, startNum);
     showToast(`PDF exportado con ${cards.length} tarjetas ✓`, 'success', 5000);
   } catch (err) {
     console.error('PDF export error:', err);

@@ -25,7 +25,7 @@ const TITLE_H = 26;  // tall title bar to fit a prominent logo (≈3× previous 
 const HEADER_H = 18;  // BINGO letter row — tall enough for 15pt letters
 
 // Remaining height for the 5×5 grid
-const CONTENT_H = CARD_H - TITLE_H - HEADER_H;  // ≈ 116.5 mm
+const CONTENT_H = CARD_H - TITLE_H - HEADER_H;
 
 // Force square cells — take the smaller of width-based and height-based sizes
 const CELL_W_RAW = CARD_W / 5;           // ≈ 18.4 mm
@@ -116,7 +116,7 @@ async function registerAntonFont(doc) {
  * @param {number} oy         top  edge of card (mm)
  * @param {Map}    imageCache preloaded HTMLImageElement map
  */
-async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactFont, logoImg) {
+async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactFont, logoImg, eventDate, eventRound) {
 
   const cornerRadius = 0;
 
@@ -136,9 +136,14 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
 
   if (logoImg) {
     // Draw logo left-aligned in the title bar, preserving aspect ratio
-    const logoH = TITLE_H - 2;           // 1 mm padding top & bottom
+    let logoH = TITLE_H - 2;           // 1 mm padding top & bottom
     const ratio = logoImg.naturalWidth / logoImg.naturalHeight;
-    const logoW = Math.min(logoH * ratio, CARD_W / 2 - 4);  // never more than half the bar width
+    let logoW = logoH * ratio;
+    const maxW = CARD_W / 2 - 4;       // never more than half the bar width
+    if (logoW > maxW) {
+      logoW = maxW;
+      logoH = logoW / ratio;           // recalculate height to keep aspect ratio
+    }
     try {
       doc.addImage(logoImg, 'JPEG', ox + 2, oy + 1, logoW, logoH);
     } catch {
@@ -155,22 +160,44 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
     doc.text(title, ox + CARD_W / 2, vCentre(oy, TITLE_H, 8.5), { align: 'center' });
   }
 
-  // Card number badge
-  const badge = `N° ${cardIndex}`;
-  const badgeFontSize = 18;
-  doc.setFont(impactFont, impactFont === 'helvetica' ? 'bold' : 'normal');
-  doc.setFontSize(badgeFontSize);
+  // ── Right-side info column (date, round, card number) ──
+  const infoLines = [];
+  const infoSizes = [];
+  const infoFonts = [];
+  if (eventDate) { infoLines.push(eventDate); infoSizes.push(9); infoFonts.push('helvetica'); }
+  if (eventRound) { infoLines.push('Ronda: ' + eventRound); infoSizes.push(14); infoFonts.push('helvetica'); }
+  infoLines.push(`N° ${cardIndex}`);
+  infoSizes.push(16);
+  infoFonts.push(impactFont === 'helvetica' ? 'helvetica' : 'Anton');
 
-  const bW = doc.getTextWidth(badge) + 10;
-  const bH = 14;
-  const bX = ox + CARD_W - bW - 4;
-  const bY = oy + (TITLE_H - bH) / 2;
+  let boxW = 0;
+  for (let i = 0; i < infoLines.length; i++) {
+    doc.setFont(infoFonts[i], infoFonts[i] === 'helvetica' ? 'bold' : 'normal');
+    doc.setFontSize(infoSizes[i]);
+    boxW = Math.max(boxW, doc.getTextWidth(infoLines[i]));
+  }
+  boxW += 12;
 
-  // doc.setFillColor(255, 255, 255, 100);
-  doc.roundedRect(bX, bY, bW, bH, 2, 2, 'F');
+  // Container fills the entire title bar height → always centred
+  const boxX = ox + CARD_W - boxW - 4;
+  const boxY = oy;
+  const boxH = TITLE_H;
 
-  doc.setTextColor(...C_WHITE);
-  doc.text(badge, bX + bW / 2, bY + bH / 2 + badgeFontSize * 0.35, { align: 'center' });
+  doc.setFillColor(...C_TITLE_BG);
+  doc.roundedRect(boxX, boxY, boxW, boxH, 4, 4, 'F');
+
+  // Vertically centre the three text lines within the title bar
+  const lineStep = 5;
+  const padY = 4;
+
+  let cursorY = boxY + padY;
+  for (let i = 0; i < infoLines.length; i++) {
+    doc.setFont(infoFonts[i], infoFonts[i] === 'helvetica' ? 'bold' : 'normal');
+    doc.setFontSize(infoSizes[i]);
+    doc.setTextColor(...C_WHITE);
+    doc.text(infoLines[i], boxX + boxW - 6, cursorY + infoSizes[i] * 0.35, { align: 'right' });
+    cursorY += lineStep;
+  }
 
   // ── BINGO column headers ───────────────────────────────────────────────
   const BINGO = ['B', 'I', 'N', 'G', 'O'];
@@ -270,7 +297,7 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
  * @param {string}   title      card title text
  * @param {Function} onProgress callback(0–100)
  */
-export async function exportToPDF(cards, title, onProgress, logoSrc) {
+export async function exportToPDF(cards, title, onProgress, logoSrc, eventDate, eventRound, startNum = 1) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -326,7 +353,7 @@ export async function exportToPDF(cards, title, onProgress, logoSrc) {
     }
 
     const { ox, oy } = positions[posIndex];
-    await drawCard(doc, cards[i], title, i + 1, ox, oy, imageCache, impactFont, logoImg);
+    await drawCard(doc, cards[i], title, startNum + i, ox, oy, imageCache, impactFont, logoImg, eventDate, eventRound);
 
     onProgress?.(Math.round(((i + 1) / totalCards) * 100));
   }
