@@ -167,7 +167,7 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
   if (eventDate) { infoLines.push(eventDate); infoSizes.push(9); infoFonts.push('helvetica'); }
   if (eventRound) { infoLines.push('Ronda: ' + eventRound); infoSizes.push(14); infoFonts.push('helvetica'); }
   infoLines.push(`N° ${cardIndex}`);
-  infoSizes.push(16);
+  infoSizes.push(15);
   infoFonts.push(impactFont === 'helvetica' ? 'helvetica' : 'Anton');
 
   let boxW = 0;
@@ -369,5 +369,13 @@ export async function exportToPDF(cards, title, onProgress, logoSrc, eventDate, 
     doc.text('Bingo por Adela - Pro Edition', MARGIN_X, PAGE_H - 3.5);
   }
 
-  doc.save(`bingo-tarjetas-${totalCards}.pdf`);
+  // Build filename from date and round, fallback to card count
+  const parts = [];
+  if (eventDate) parts.push(eventDate);
+  if (eventRound) parts.push(`ronda-${eventRound}`);
+  const filename = parts.length > 0
+    ? `${parts.join('_')}.pdf`
+    : `bingo-tarjetas-${totalCards}.pdf`;
+
+  doc.save(filename);
 }
