@@ -16,6 +16,10 @@ const state = {
   images: [],
   /** @type {Array<Array>|null} Last generated card set */
   lastCards: null,
+  /** @type {string|null} Current logo src (dataUrl or relative URL) */
+  logoSrc: null,
+  /** @type {boolean} True when user has uploaded a custom logo */
+  customLogo: false,
 };
 
 // ============================================================
@@ -37,16 +41,23 @@ const toastEl         = document.getElementById('toast');
 
 const inputTitle      = document.getElementById('card-title');
 const inputRange      = document.getElementById('number-range');
-const inputWords      = document.getElementById('words-input');
 const inputCardCount  = document.getElementById('card-count');
-const toggleFreeSpace = document.getElementById('free-space-toggle');
-const freeSpaceLabel  = document.getElementById('free-space-label');
-const wordsCount      = document.getElementById('words-count');
+const inputCardStart  = document.getElementById('card-start');
+const inputEventDate  = document.getElementById('event-date');
+const inputEventRound = document.getElementById('event-round');
 
 const statImages  = document.getElementById('stat-images');
 const statNumbers = document.getElementById('stat-numbers');
-const statWords   = document.getElementById('stat-words');
 const statTotal   = document.getElementById('stat-total');
+
+// Logo controls
+const logoUploadZone = document.getElementById('logo-upload-zone');
+const logoPreviewImg = document.getElementById('logo-preview-img');
+const logoFileInput  = document.getElementById('logo-file-input');
+const btnResetLogo   = document.getElementById('btn-reset-logo');
+
+const DEFAULT_LOGO_URL  = 'images/logo.jpg';
+const LOGO_STORAGE_KEY  = 'bingo-logo-dataurl';
 
 // ============================================================
 // TOAST
@@ -79,16 +90,10 @@ function clearValidation() {
 // ============================================================
 function updateStats() {
   const numRange  = parseInt(inputRange.value, 10) || 0;
-  const wordsRaw  = inputWords.value;
-  const wordList  = wordsRaw.split(',').map(w => w.trim()).filter(Boolean);
 
   statImages.textContent  = state.images.length;
   statNumbers.textContent = numRange > 0 ? numRange : 0;
-  statWords.textContent   = wordList.length;
-  statTotal.textContent   = state.images.length + (numRange > 0 ? numRange : 0) + wordList.length;
-
-  // Update words hint
-  wordsCount.textContent = `${wordList.length} palabra${wordList.length !== 1 ? 's' : ''}`;
+  statTotal.textContent   = state.images.length + (numRange > 0 ? numRange : 0);
 }
 
 // ============================================================
@@ -210,6 +215,69 @@ function createEmptySlot() {
 }
 
 // ============================================================
+// LOGO HANDLING
+// ============================================================
+
+/** Update the logo preview img + button visibility */
+function applyLogoToUI() {
+  logoPreviewImg.src = state.logoSrc || DEFAULT_LOGO_URL;
+  btnResetLogo.style.display = state.customLogo ? 'flex' : 'none';
+}
+
+/** Load default logo from /images/logo.jpg as a dataUrl (needed for PDF) */
+async function loadDefaultLogo() {
+  try {
+    // Use a canvas round-trip so we always have a dataUrl for the PDF
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = rej;
+      img.src = DEFAULT_LOGO_URL + '?v=' + Date.now(); // bypass cache check
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width  = img.naturalWidth  || 200;
+    canvas.height = img.naturalHeight || 80;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    state.logoSrc   = canvas.toDataURL('image/jpeg', 0.9);
+    state.customLogo = false;
+  } catch {
+    // If the file isn't found just leave logoSrc null
+    state.logoSrc   = null;
+    state.customLogo = false;
+  }
+  applyLogoToUI();
+}
+
+/** Handle a user-uploaded logo file */
+async function handleLogoUpload(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    state.logoSrc   = dataUrl;
+    state.customLogo = true;
+    localStorage.setItem(LOGO_STORAGE_KEY, dataUrl);
+    applyLogoToUI();
+    // Refresh open preview cards
+    document.querySelectorAll('.card-header-logo').forEach(el => { el.src = dataUrl; });
+    state.lastCards = null;
+    showToast('Logo actualizado ✓', 'success');
+  } catch (err) {
+    console.error('Error uploading logo:', err);
+    showToast('Error al cargar el logo', 'error');
+  }
+}
+
+/** Reset logo back to the default image */
+async function handleResetLogo() {
+  localStorage.removeItem(LOGO_STORAGE_KEY);
+  await loadDefaultLogo();
+  // Refresh open preview cards
+  document.querySelectorAll('.card-header-logo').forEach(el => { el.src = state.logoSrc || DEFAULT_LOGO_URL; });
+  state.lastCards = null;
+  showToast('Logo restablecido', 'info');
+}
+
+// ============================================================
 // IMAGE HANDLING
 // ============================================================
 
@@ -295,14 +363,12 @@ function generateCardSet() {
 
   const pool = buildPool(
     state.images,
-    inputRange.value,
-    inputWords.value
+    inputRange.value
   );
 
   const count      = Math.max(1, Math.min(200, parseInt(inputCardCount.value, 10) || 10));
-  const freeSpace  = toggleFreeSpace.checked;
 
-  const { cards, error } = generateCards(pool, count, freeSpace);
+  const { cards, error } = generateCards(pool, count);
 
   if (error) {
     showValidation(error, cards.length > 0 ? 'info' : 'error');
@@ -323,21 +389,9 @@ function renderCell(cell) {
   const div = document.createElement('div');
   div.className = 'card-cell';
 
-  if (cell === null) {
-    div.classList.add('free-space');
-    div.innerHTML = '★';
-    div.title = 'Espacio libre';
-    return div;
-  }
-
   if (cell.type === 'number') {
     const span = document.createElement('span');
     span.className = 'cell-number';
-    span.textContent = cell.value;
-    div.appendChild(span);
-  } else if (cell.type === 'word') {
-    const span = document.createElement('span');
-    span.className = 'cell-word';
     span.textContent = cell.value;
     div.appendChild(span);
   } else if (cell.type === 'image') {
@@ -352,20 +406,53 @@ function renderCell(cell) {
 }
 
 /** Render a full bingo card element */
-function renderCardEl(grid, cardIndex) {
+function renderCardEl(grid, cardIndex, eventDate, eventRound) {
   const title = inputTitle.value.trim() || '¡BINGO!';
 
   const card = document.createElement('div');
   card.className = 'bingo-card';
   card.style.animationDelay = `${(cardIndex - 1) * 0.05}s`;
 
-  // Header
+  // Header — logo if available, otherwise title text
   const header = document.createElement('div');
   header.className = 'card-header';
-  header.innerHTML = `
-    <span class="card-title-text">${escapeHtml(title)}</span>
-    <span class="card-number-badge">#${cardIndex}</span>
-  `;
+
+  if (state.logoSrc) {
+    const logoEl = document.createElement('img');
+    logoEl.src       = state.logoSrc;
+    logoEl.className = 'card-header-logo';
+    logoEl.alt       = 'Logo';
+    header.appendChild(logoEl);
+  } else {
+    const titleSpan = document.createElement('span');
+    titleSpan.className   = 'card-title-text';
+    titleSpan.textContent = title;
+    header.appendChild(titleSpan);
+  }
+
+  // Right side: date, round, card number
+  const headerRight = document.createElement('div');
+  headerRight.className = 'card-header-right';
+
+  if (eventDate) {
+    const el = document.createElement('span');
+    el.className = 'card-header-date';
+    el.textContent = eventDate;
+    headerRight.appendChild(el);
+  }
+  if (eventRound) {
+    const el = document.createElement('span');
+    el.className = 'card-header-round';
+    el.textContent = eventRound;
+    headerRight.appendChild(el);
+  }
+
+  const badge = document.createElement('span');
+  badge.className   = 'card-number-badge';
+  badge.textContent = `#${cardIndex}`;
+  headerRight.appendChild(badge);
+
+  header.appendChild(headerRight);
   card.appendChild(header);
 
   // BINGO column labels
@@ -402,8 +489,12 @@ function escapeHtml(str) {
 function showPreview(cards) {
   previewGrid.innerHTML = '';
 
+  const eventDate  = inputEventDate.value || '';
+  const eventRound = inputEventRound.value || '';
+  const startNum   = parseInt(inputCardStart.value, 10) || 1;
+
   cards.forEach((grid, i) => {
-    const el = renderCardEl(grid, i + 1);
+    const el = renderCardEl(grid, startNum + i, eventDate, eventRound);
     previewGrid.appendChild(el);
   });
 
@@ -428,6 +519,9 @@ async function handleExport() {
   }
 
   const title = inputTitle.value.trim() || '¡BINGO!';
+  const eventDate  = inputEventDate.value || '';
+  const eventRound = inputEventRound.value || '';
+  const startNum   = parseInt(inputCardStart.value, 10) || 1;
 
   loadingModal.style.display = 'flex';
   progressBar.style.width = '0%';
@@ -437,7 +531,7 @@ async function handleExport() {
     await exportToPDF(cards, title, (progress) => {
       progressBar.style.width = `${progress}%`;
       loadingDesc.textContent = `Renderizando tarjeta ${Math.ceil(progress / 100 * cards.length)} de ${cards.length}...`;
-    });
+    }, state.logoSrc, eventDate, eventRound, startNum);
     showToast(`PDF exportado con ${cards.length} tarjetas ✓`, 'success', 5000);
   } catch (err) {
     console.error('PDF export error:', err);
@@ -480,10 +574,7 @@ function attachListeners() {
     state.lastCards = null;
   });
 
-  inputWords.addEventListener('input', () => {
-    updateStats();
-    state.lastCards = null;
-  });
+
 
   inputCardCount.addEventListener('input', () => {
     state.lastCards = null;
@@ -496,10 +587,19 @@ function attachListeners() {
     });
   });
 
-  toggleFreeSpace.addEventListener('change', () => {
-    freeSpaceLabel.textContent = toggleFreeSpace.checked ? 'Activado' : 'Desactivado';
-    state.lastCards = null;
+  // Logo upload zone
+  logoUploadZone.addEventListener('click', (e) => {
+    if (e.target !== logoFileInput) logoFileInput.click();
   });
+  logoUploadZone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); logoFileInput.click(); }
+  });
+  logoFileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) handleLogoUpload(e.target.files[0]);
+  });
+  btnResetLogo.addEventListener('click', handleResetLogo);
+
+
 }
 
 // ============================================================
@@ -514,6 +614,16 @@ async function init() {
   } catch (err) {
     console.warn('Could not load images from DB:', err);
     state.images = [];
+  }
+
+  // Load logo: custom from localStorage, or default
+  const storedLogo = localStorage.getItem(LOGO_STORAGE_KEY);
+  if (storedLogo) {
+    state.logoSrc    = storedLogo;
+    state.customLogo = true;
+    applyLogoToUI();
+  } else {
+    await loadDefaultLogo();
   }
 
   renderImageGrid();
