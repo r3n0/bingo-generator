@@ -13,8 +13,8 @@ const PAGE_H = 297;   // A4 height mm
 
 const MARGIN_X = 10; // left/right page margin
 const MARGIN_Y = 10; // top/bottom page margin
-const COL_GAP = 10;  // horizontal gap between the two columns
-const ROW_GAP = 10;  // vertical   gap between the two rows
+const COL_GAP = 20;  // horizontal gap between the two columns
+const ROW_GAP = 20;  // vertical   gap between the two rows
 
 // 2 columns, 2 rows
 const CARD_W = (PAGE_W - MARGIN_X * 2 - COL_GAP) / 2;   // ≈ 92 mm
@@ -42,7 +42,7 @@ const GRID_OFFSET_Y = TITLE_H + HEADER_H + (CONTENT_H - GRID_H) / 2; // vertical
 const C_WHITE = [255, 255, 255];
 const C_PAGE_BG = [245, 245, 245];   // very light grey page
 const C_CARD_BG = [255, 255, 255];   // card white background
-const C_CELL_ALT = [244, 244, 244];   // subtle checkerboard tint
+const C_CELL_ALT = [230, 230, 230];   // subtle checkerboard tint
 const C_BORDER = [0, 0, 0];   // grid lines
 const C_OUTER_BORDER = [0, 0, 0];    // card outer frame (dark blue)
 const C_TITLE_BG = [0, 0, 0];    // deep blue title bar
@@ -118,18 +118,21 @@ async function registerAntonFont(doc) {
  */
 async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactFont, logoImg) {
 
-  const cornerRadius = 4;
+  const cornerRadius = 0;
+
+  doc.saveGraphicsState();
+
+  // Create clipping path for the entire card
+  doc.roundedRect(ox, oy, CARD_W, CARD_H, cornerRadius, cornerRadius, null);
+  doc.clip();
 
   // ── White card background ──────────────────────────────────────────────
   doc.setFillColor(...C_CARD_BG);
-  doc.roundedRect(ox, oy, CARD_W, CARD_H, cornerRadius, cornerRadius, 'F');
+  doc.rect(ox, oy, CARD_W, CARD_H, 'F');
 
   // ── Title bar ──────────────────────────────────────────────────────────
   doc.setFillColor(...C_TITLE_BG);
-  // Rounded rect for the top corners
-  doc.roundedRect(ox, oy, CARD_W, TITLE_H, cornerRadius, cornerRadius, 'F');
-  // Regular rect to square off the bottom corners of the title bar
-  doc.rect(ox, oy + cornerRadius, CARD_W, TITLE_H - cornerRadius, 'F');
+  doc.rect(ox, oy, CARD_W, TITLE_H, 'F');
 
   if (logoImg) {
     // Draw logo left-aligned in the title bar, preserving aspect ratio
@@ -187,7 +190,7 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
     }
     // Use Anton (Impact-like) for BINGO letters at a generous size
     doc.setFont(impactFont, impactFont === 'helvetica' ? 'bold' : 'normal');
-    doc.setFontSize(20);
+    doc.setFontSize(30);
     doc.setTextColor(...C_HEADER_TXT);
     doc.text(BINGO[c], cx + CELL_SIZE / 2, vCentre(headerY, HEADER_H, 15), { align: 'center' });
   }
@@ -250,6 +253,8 @@ async function drawCard(doc, grid, title, cardIndex, ox, oy, imageCache, impactF
       }
     }
   }
+
+  doc.restoreGraphicsState();
 
   // ── Outer card border ─────────────────────────────────────────────────
   doc.setDrawColor(...C_OUTER_BORDER);
